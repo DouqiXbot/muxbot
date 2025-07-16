@@ -6,14 +6,14 @@ from config.settings import (
     QUALITY_OPTIONS, PRESET_OPTIONS, BIT_DEPTH_OPTIONS
 )
 
-# Default settings in case user_settings is missing values
+# Use the first valid value from each list/dict
 DEFAULT_SETTINGS = {
-    "codec": CODEC_OPTIONS[0],
-    "crf": CRF_OPTIONS[0],
-    "resolution": RESOLUTION_OPTIONS[0],
-    "quality": QUALITY_OPTIONS[0],
-    "preset": PRESET_OPTIONS[0],
-    "bit_depth": BIT_DEPTH_OPTIONS[0]
+    "codec": next(iter(CODEC_OPTIONS)),           # Gets 'libx264'
+    "crf": CRF_OPTIONS[1],                         # '23'
+    "resolution": RESOLUTION_OPTIONS[0],           # 'original'
+    "quality": QUALITY_OPTIONS[1],                 # 'medium'
+    "preset": PRESET_OPTIONS[5],                   # 'medium'
+    "bit_depth": BIT_DEPTH_OPTIONS[0]              # '8'
 }
 
 async def get_settings_markup(user_id, client, user_settings):
