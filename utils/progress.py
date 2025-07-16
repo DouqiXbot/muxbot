@@ -39,23 +39,17 @@ def parse_ffmpeg_progress(line: str) -> Optional[Dict]:
     items = {key: value for key, value in progress_pattern.findall(line)}
     return items if items else None
 
-async def readlines(stream):
-    """Async generator to read lines from stream"""
-    pattern = re.compile(br'[\r\n]+')
-    data = bytearray()
-    while not stream.at_eof():
-        lines = pattern.split(data)
-        data[:] = lines.pop(-1)
-        for line in lines:
-            yield line
-        data.extend(await stream.read(1024))
-
 async def monitor_ffmpeg_progress(process, msg):
-    """Monitor FFmpeg progress and update message"""
+    """Monitor FFmpeg progress using stderr lines"""
     last_edit_time = 0
-    async for line in readlines(process.stderr):
-        line = line.decode('utf-8', errors='ignore')
+    while True:
+        line = process.stderr.readline()
+        if not line:
+            break
+
+        line = line.decode('utf-8', errors='ignore').strip()
         progress = parse_ffmpeg_progress(line)
+
         if progress:
             now = time.time()
             if now - last_edit_time >= 5:  # Update every 5 seconds
