@@ -5,6 +5,7 @@ from handlers import (
     callback_handlers
 )
 from database.db import db
+from config.settings import DEFAULT_SETTINGS
 
 # Bot configuration
 API_ID = 123456  # Replace with your API ID
@@ -14,10 +15,27 @@ BOT_TOKEN = 'your_bot_token_here'  # Replace with your bot token
 # Initialize the client
 client = TelegramClient('hardmux_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# /start command
+
+# === COMMAND HANDLERS ===
+
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
     await message_handlers.start_handler(event, client)
+
+@client.on(events.NewMessage(pattern='/settings'))
+async def open_settings(event):
+    """Manual command to open settings menu"""
+    user_id = event.sender_id
+    current_settings = db.get_settings(user_id) or DEFAULT_SETTINGS
+    from utils.helpers import get_settings_markup  # Avoid circular import
+
+    await event.respond(
+        "⚙️ Choose your encoding settings:",
+        buttons=await get_settings_markup(user_id, client, {user_id: current_settings})
+    )
+
+
+# === FILE HANDLERS ===
 
 # ✅ Handle video files: .mp4 and .mkv
 @client.on(events.NewMessage(func=lambda e: e.file and e.file.name and e.file.name.lower().endswith(('.mp4', '.mkv'))))
@@ -29,27 +47,48 @@ async def video(event):
 async def subtitle(event):
     await message_handlers.subtitle_handler(event, client)
 
-# Callback for back from settings
+
+# === CALLBACK BUTTONS ===
+
 @client.on(events.CallbackQuery(data=b'settings_back'))
 async def settings_back(event):
     await callback_handlers.settings_back_handler(event, client)
 
-# Apply settings
 @client.on(events.CallbackQuery(data=b'apply_settings'))
 async def apply_settings(event):
     await callback_handlers.apply_settings_handler(event)
 
-# Reset to default settings
 @client.on(events.CallbackQuery(data=b'reset_settings'))
 async def reset_settings(event):
     await callback_handlers.reset_settings_handler(event, client)
 
-# Bit depth selector
+@client.on(events.CallbackQuery(data=b'set_codec'))
+async def set_codec(event):
+    await callback_handlers.set_codec_handler(event, client)
+
+@client.on(events.CallbackQuery(data=b'set_crf'))
+async def set_crf(event):
+    await callback_handlers.set_crf_handler(event, client)
+
+@client.on(events.CallbackQuery(data=b'set_resolution'))
+async def set_resolution(event):
+    await callback_handlers.set_resolution_handler(event, client)
+
+@client.on(events.CallbackQuery(data=b'set_quality'))
+async def set_quality(event):
+    await callback_handlers.set_quality_handler(event, client)
+
+@client.on(events.CallbackQuery(data=b'set_preset'))
+async def set_preset(event):
+    await callback_handlers.set_preset_handler(event, client)
+
 @client.on(events.CallbackQuery(data=b'set_bitdepth'))
 async def set_bitdepth(event):
     await callback_handlers.set_bit_depth_handler(event, client)
 
-# Generic callback for codec, crf, resolution, quality, preset, bitdepth
+
+# === SETTING VALUE CALLBACKS ===
+
 @client.on(events.CallbackQuery())
 async def callback(event):
     data = event.data.decode('utf-8')
@@ -66,7 +105,9 @@ async def callback(event):
     elif data.startswith('bitdepth_'):
         await callback_handlers.generic_setting_handler(event, client, 'bitdepth')
 
-# Run the bot
+
+# === RUN THE BOT ===
+
 if __name__ == '__main__':
     print("Bot started...")
     client.run_until_disconnected()
