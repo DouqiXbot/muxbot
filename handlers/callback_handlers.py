@@ -10,7 +10,11 @@ from database.db import db
 async def settings_back_handler(event, client):
     """Handle back button in settings"""
     user_id = event.sender_id
-    await event.edit("Settings:", buttons=await get_settings_markup(user_id, client))
+    current_settings = db.get_settings(user_id) or DEFAULT_SETTINGS
+    await event.edit(
+        "⚙️ Settings:",
+        buttons=await get_settings_markup(user_id, client, {user_id: current_settings})
+    )
 
 async def apply_settings_handler(event):
     """Handle apply settings button"""
@@ -22,7 +26,7 @@ async def reset_settings_handler(event, client):
     db.put_settings(user_id, DEFAULT_SETTINGS)
     await event.edit(
         ERROR_MESSAGES['settings_reset'],
-        buttons=await get_settings_markup(user_id, client)
+        buttons=await get_settings_markup(user_id, client, {user_id: DEFAULT_SETTINGS})
     )
 
 async def generic_setting_handler(event, client, setting_type):
@@ -30,7 +34,7 @@ async def generic_setting_handler(event, client, setting_type):
     user_id = event.sender_id
     data = event.data.decode('utf-8')
     
-    # Get current settings or defaults
+    # Get current settings or default
     current_settings = db.get_settings(user_id) or DEFAULT_SETTINGS.copy()
     
     setting_map = {
@@ -45,9 +49,10 @@ async def generic_setting_handler(event, client, setting_type):
     prefix, setting_key = setting_map[setting_type]
     
     if data.startswith(prefix):
-        current_settings[setting_key] = data[len(prefix):]
+        new_value = data[len(prefix):]
+        current_settings[setting_key] = new_value
         db.put_settings(user_id, current_settings)
         await event.edit(
-            f"{setting_key.replace('_', ' ').title()} set to: {data[len(prefix):]}",
-            buttons=await get_settings_markup(user_id, client)
+            f"✅ `{setting_key.replace('_', ' ').title()}` set to: `{new_value}`",
+            buttons=await get_settings_markup(user_id, client, {user_id: current_settings})
         )
