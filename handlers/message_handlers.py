@@ -124,3 +124,10 @@ async def subtitle_handler(event, client):
         db.erase(user_id)
         if os.path.exists(output_path):
             os.remove(output_path)
+
+# ✅ Fix: Define start_handler so it doesn't crash
+async def start_handler(event, client):
+    user_id = event.sender_id
+    user_settings = db.get_settings(user_id) or DEFAULT_SETTINGS
+    markup = await get_settings_markup(user_id, client, {user_id: user_settings})
+    await event.respond(WELCOME_MESSAGE, buttons=markup)
