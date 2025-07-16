@@ -1,16 +1,15 @@
 import os
-import ffmpeg
 import asyncio
-from typing import Dict, Callable, Optional
+import requests
 from config.settings import DEFAULT_SETTINGS, FONT_URL, FONT_FILENAME
 from utils.progress import monitor_ffmpeg_progress
-import requests
+import ffmpeg
 
 def ensure_font_downloaded():
     """Ensure the font file is downloaded and available"""
     font_path = os.path.join(os.path.dirname(__file__), '..', 'fonts', FONT_FILENAME)
     os.makedirs(os.path.dirname(font_path), exist_ok=True)
-    
+
     if not os.path.exists(font_path):
         response = requests.get(FONT_URL)
         with open(font_path, 'wb') as f:
@@ -22,19 +21,16 @@ async def process_video(
     video_path: str, 
     sub_path: str, 
     output_path: str, 
-    settings: Dict,
+    settings: dict,
     progress_message
 ):
-    """Process video with subtitles using FFmpeg with real-time progress"""
     try:
-        # Ensure font is available
         font_path = ensure_font_downloaded()
-        
-        # Get video info
+
+        # Get resolution
         probe = ffmpeg.probe(video_path)
-        video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-        
-        # Set resolution
+        video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
+
         if settings['resolution'] == 'original':
             width = video_stream['width']
             height = video_stream['height']
@@ -45,66 +41,50 @@ async def process_video(
                 '480p': (854, 480)
             }
             width, height = res_map.get(settings['resolution'], (video_stream['width'], video_stream['height']))
-        
-        # Build ffmpeg command
-        input_video = ffmpeg.input(video_path)
-        
-        stream = input_video.filter(
-            'subtitles', 
-            sub_path,
-            force_style=f"Fontname={font_path},Fontsize=24,PrimaryColour=&HFFFFFF&"
+
+        # FFmpeg args
+        ffmpeg_cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", video_path,
+            "-vf", f"subtitles='{sub_path}':force_style='FontName={font_path},Fontsize=24,PrimaryColour=&HFFFFFF&'"
+                   + (f",scale={width}:{height}" if (width, height) != (video_stream['width'], video_stream['height']) else ""),
+            "-vcodec", settings['codec'],
+            "-crf", settings['crf'],
+            "-preset", settings['preset'],
+            "-progress", "pipe:1",
+            "-f", "mp4"
+        ]
+
+        # Add bit depth support
+        if settings['bit_depth'] == '10' and settings['codec'] in ['libx265', 'libvpx-vp9']:
+            ffmpeg_cmd += ["-pix_fmt", "yuv420p10le"]
+            if settings['codec'] == 'libx265':
+                ffmpeg_cmd += ["-x265-params", "profile=main10"]
+
+        # Output path
+        ffmpeg_cmd.append(output_path)
+
+        # Start process
+        process = await asyncio.create_subprocess_exec(
+            *ffmpeg_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-        
-        if (width, height) != (video_stream['width'], video_stream['height']):
-            stream = stream.filter('scale', width, height)
-        
-        # Configure output
-        output_args = {
-            'vcodec': settings['codec'],
-            'crf': settings['crf'],
-            'preset': settings['preset'],
-            **{'q:v': {'low': 28, 'medium': 23, 'high': 18, 'very high': 12}[settings['quality']]}
-        }
-        
-        # Add 10-bit support
-        if settings['bit_depth'] == '10':
-            if settings['codec'] in ['libx265', 'libvpx-vp9']:
-                output_args['pix_fmt'] = 'yuv420p10le'
-                if settings['codec'] == 'libx265':
-                    output_args['x265-params'] = 'profile=main10'
-        
-        # Run FFmpeg with progress monitoring
-        process = (
-            stream
-            .output(output_path, **output_args)
-            .global_args('-progress', 'pipe:1')  # Send progress to stdout
-            .run_async(pipe_stdout=True, pipe_stderr=True, overwrite_output=True)
-        )
-        
-        # Start progress monitoring
-        progress_task = asyncio.create_task(
-            monitor_ffmpeg_progress(process, progress_message)
-        )
-        
-        # Wait for process to complete
+
+        # Monitor progress
+        await monitor_ffmpeg_progress(process, progress_message)
+
+        # Wait for process to finish
         await process.wait()
-        progress_task.cancel()
-        
-        # Final progress update
-        try:
-            await progress_message.edit("✅ **Processing complete!** Uploading now...")
-        except:
-            pass
-        
-        return True
+
+        await progress_message.edit("✅ **Processing complete!** Uploading now...")
+
     except Exception as e:
-        try:
-            await progress_message.edit(f"❌ **Error processing video:** {str(e)}")
-        except:
-            pass
+        await progress_message.edit(f"❌ **Error processing video:** `{str(e)}`")
         raise e
+
     finally:
-        # Clean up temporary files
-        for path in [video_path, sub_path]:
-            if os.path.exists(path):
-                os.remove(path)
+        for f in [video_path, sub_path]:
+            if os.path.exists(f):
+                os.remove(f)
