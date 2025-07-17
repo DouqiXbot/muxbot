@@ -1,3 +1,4 @@
 pyrogram
 TgCrypto-pyrofork
 ffmpeg-python==0.2.0
+python-dotenv
